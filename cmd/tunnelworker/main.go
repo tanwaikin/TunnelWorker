@@ -29,10 +29,10 @@ func main() {
 func run(args []string, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("tunnelworker", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	baseRaw := fs.String("url", "https://dev.example.net", "TunnelWorker control URL")
+	baseRaw := fs.String("url", os.Getenv("TUNNELWORKER_URL"), "Worker control URL (required; can also use TUNNELWORKER_URL)")
 	port := fs.Int("port", 3000, "local application port")
 	localRaw := fs.String("local", "", "local application URL (defaults to http://127.0.0.1:<port>)")
-	domainRaw := fs.String("domain", "", "routing domain (defaults to --url hostname, or dev.example.net for loopback)")
+	domainRaw := fs.String("domain", "", "routing domain (defaults to --url hostname, or example.test for loopback)")
 	ttl := fs.Duration("ttl", 30*time.Minute, "new tunnel lifetime (maximum 24h)")
 	password := fs.String("password", "", "optional visitor password (or TUNNELWORKER_PASSWORD)")
 	connectID := fs.String("connect", "", "reconnect to an existing tunnel ID")
@@ -44,7 +44,11 @@ func run(args []string, out, errOut io.Writer) error {
 	if fs.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
 	}
-	base, err := parseBase(*baseRaw)
+	baseRawValue := strings.TrimSpace(*baseRaw)
+	if baseRawValue == "" {
+		return errors.New("Worker URL is required; pass --url or set TUNNELWORKER_URL")
+	}
+	base, err := parseBase(baseRawValue)
 	if err != nil {
 		return err
 	}

@@ -55,7 +55,7 @@ func RouteDomain(base *url.URL, override string) (string, error) {
 		return "", fmt.Errorf("control URL has no hostname")
 	}
 	if net.ParseIP(host) != nil || host == "localhost" || strings.HasSuffix(host, ".localhost") {
-		return "dev.example.net", nil
+		return "example.test", nil
 	}
 	return host, nil
 }

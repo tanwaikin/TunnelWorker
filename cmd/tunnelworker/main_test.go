@@ -1,17 +1,19 @@
 package main
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestParseBaseAndLocal(t *testing.T) {
-	for _, raw := range []string{"https://dev.example.net", "http://127.0.0.1:8787"} {
+	for _, raw := range []string{"https://example.test", "http://127.0.0.1:8787"} {
 		if _, err := parseBase(raw); err != nil {
 			t.Errorf("parseBase(%q): %v", raw, err)
 		}
 	}
-	for _, raw := range []string{"dev.example.net", "ftp://dev.example.net", "https://user@dev.example.net", "https://dev.example.net/?token=x"} {
+	for _, raw := range []string{"example.test", "ftp://example.test", "https://user@example.test", "https://example.test/?token=x"} {
 		if _, err := parseBase(raw); err == nil {
 			t.Errorf("parseBase(%q) should fail", raw)
 		}
@@ -45,5 +47,20 @@ func TestDefaultSessionPathIsOutsideWorkingTree(t *testing.T) {
 	path := defaultSessionPath()
 	if path == ".tunnelworker/session.json" {
 		t.Fatal("default credentials would be written in repository")
+	}
+}
+
+func TestRunRequiresWorkerURLOrEnvironmentValue(t *testing.T) {
+	t.Setenv("TUNNELWORKER_URL", "")
+	t.Setenv("TUNNELWORKER_TOKEN", "")
+	var stderr bytes.Buffer
+	err := run(nil, &bytes.Buffer{}, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "--url or set TUNNELWORKER_URL") {
+		t.Fatalf("missing URL error = %v", err)
+	}
+	t.Setenv("TUNNELWORKER_URL", "https://control.example.net")
+	err = run(nil, &bytes.Buffer{}, &stderr)
+	if err == nil || strings.Contains(err.Error(), "Worker URL is required") || !strings.Contains(err.Error(), "TUNNELWORKER_TOKEN") {
+		t.Fatalf("environment URL was not used: %v", err)
 	}
 }

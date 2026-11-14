@@ -19,7 +19,7 @@ type Frame = { type: string; id?: string; [key: string]: unknown };
 async function createTunnel(
   options: Record<string, unknown> = {},
 ): Promise<TunnelInfo> {
-  const response = await SELF.fetch("https://dev.example.net/api/tunnels", {
+  const response = await SELF.fetch("https://example.test/api/tunnels", {
     method: "POST",
     headers: {
       authorization: `Bearer ${operatorToken}`,
@@ -93,7 +93,7 @@ function visitorRequest(
 describe("TunnelWorker integration", () => {
   it("creates protected tunnels with expiring credentials and reserves management routes only at the apex", async () => {
     const unauthenticated = await SELF.fetch(
-      "https://dev.example.net/api/tunnels",
+      "https://example.test/api/tunnels",
       { method: "POST", body: "{}" },
     );
     expect(unauthenticated.status).toBe(401);
@@ -103,7 +103,7 @@ describe("TunnelWorker integration", () => {
       visitorPassword: "correct horse",
     });
     expect(tunnel.id).toMatch(/^[a-f0-9]{36}$/);
-    expect(new URL(tunnel.url).hostname).toBe(`${tunnel.id}.dev.example.net`);
+    expect(new URL(tunnel.url).hostname).toBe(`${tunnel.id}.example.test`);
     expect(tunnel.expiresAt).toBeGreaterThan(Date.now());
 
     const missingPassword = await SELF.fetch(
@@ -123,10 +123,10 @@ describe("TunnelWorker integration", () => {
     );
     expect(noPasswordWS.status).toBe(401);
 
-    const publicHealth = await SELF.fetch("https://dev.example.net/_health");
+    const publicHealth = await SELF.fetch("https://example.test/_health");
     expect(publicHealth.status).toBe(200);
     const wrongHostManagement = await SELF.fetch(
-      `https://${tunnel.id}.dev.example.net/api/tunnels`,
+      `https://${tunnel.id}.example.test/api/tunnels`,
       { method: "POST" },
     );
     expect(wrongHostManagement.status).toBe(401); // forwarded through the tunnel's visitor auth boundary
@@ -146,7 +146,7 @@ describe("TunnelWorker integration", () => {
       `Basic ${btoa("app:credential")}`,
     ]);
     expect(start.headers).toMatchObject({
-      "x-forwarded-host": [`${tunnel.id}.dev.example.net`],
+      "x-forwarded-host": [`${tunnel.id}.example.test`],
     });
     await connector.next("http_body_end");
     const id = String(start.id);

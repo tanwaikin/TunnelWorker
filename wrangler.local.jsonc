@@ -5,7 +5,7 @@
   "compatibility_date": "2026-11-14",
   "workers_dev": false,
   "vars": {
-    "BASE_DOMAIN": "dev.example.net",
+    "BASE_DOMAIN": "example.test",
     "DEFAULT_TTL_SECONDS": "1800",
     "MAX_TTL_SECONDS": "86400",
     "MAX_BODY_BYTES": "8388608",

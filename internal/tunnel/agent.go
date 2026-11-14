@@ -118,7 +118,7 @@ func (a *Agent) controlURL() (*url.URL, string) {
 	u.Fragment = ""
 	domain := a.cfg.Domain
 	if domain == "" {
-		domain = "dev.example.net"
+		domain = "example.test"
 	}
 	return &u, a.cfg.ID + "." + domain
 }

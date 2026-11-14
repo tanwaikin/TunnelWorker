@@ -23,7 +23,7 @@ func TestCreateUsesApexHostAndTTLSeconds(t *testing.T) {
 			t.Error(err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"abc","url":"https://abc.dev.example.net","connectorToken":"connector-secret","expiresAt":1730000000000}`))
+		_, _ = w.Write([]byte(`{"id":"abc","url":"https://abc.example.test","connectorToken":"connector-secret","expiresAt":1730000000000}`))
 	}))
 	defer srv.Close()
 	u, _ := url.Parse(srv.URL)
@@ -31,8 +31,8 @@ func TestCreateUsesApexHostAndTTLSeconds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if seenHost != "dev.example.net" {
-		t.Fatalf("Host = %q, want dev.example.net", seenHost)
+	if seenHost != "example.test" {
+		t.Fatalf("Host = %q, want example.test", seenHost)
 	}
 	if seenAuth != "Bearer operator-secret" {
 		t.Fatalf("Authorization = %q", seenAuth)
@@ -47,7 +47,7 @@ func TestCreateUsesApexHostAndTTLSeconds(t *testing.T) {
 
 func TestRouteDomainUsesLocalDefaultAndCustomDomain(t *testing.T) {
 	local, _ := url.Parse("http://127.0.0.1:8787")
-	if got, err := RouteDomain(local, ""); err != nil || got != "dev.example.net" {
+	if got, err := RouteDomain(local, ""); err != nil || got != "example.test" {
 		t.Fatalf("local domain = %q, %v", got, err)
 	}
 	remote, _ := url.Parse("https://control.example.org")

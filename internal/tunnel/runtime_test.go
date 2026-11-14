@@ -117,12 +117,12 @@ func TestHeaderForwardingStripsHopByHopAndPreservesCookies(t *testing.T) {
 
 func TestTranslateOnlyExactPublicOrigin(t *testing.T) {
 	local, _ := url.Parse("http://127.0.0.1:3000")
-	cfg := Config{ID: "abc", Domain: "dev.example.net", LocalURL: local}
+	cfg := Config{ID: "abc", Domain: "example.test", LocalURL: local}
 	for input, want := range map[string]string{
-		"https://abc.dev.example.net":              "http://127.0.0.1:3000",
-		"https://foreign.example":                "https://foreign.example",
-		"null":                                   "null",
-		"https://abc.dev.example.net.evil.example": "https://abc.dev.example.net.evil.example",
+		"https://abc.example.test":              "http://127.0.0.1:3000",
+		"https://foreign.example":               "https://foreign.example",
+		"null":                                  "null",
+		"https://abc.example.test.evil.example": "https://abc.example.test.evil.example",
 	} {
 		got := translatePublicOrigin(map[string][]string{"Origin": {input}}, cfg)["Origin"][0]
 		if got != want {
@@ -138,7 +138,7 @@ func TestControlURLAndHostRouteByTunnelID(t *testing.T) {
 	if u.String() != "ws://127.0.0.1:8787/_control" {
 		t.Fatalf("control URL = %s", u)
 	}
-	if host != "abc123.dev.example.net" {
+	if host != "abc123.example.test" {
 		t.Fatalf("Host = %s", host)
 	}
 }

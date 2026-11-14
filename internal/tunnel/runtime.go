@@ -301,7 +301,7 @@ func translatePublicOrigin(src map[string][]string, cfg Config) map[string][]str
 		origin, err := url.Parse(values[0])
 		publicHost := cfg.ID + "." + cfg.Domain
 		if cfg.Domain == "" {
-			publicHost = cfg.ID + ".dev.example.net"
+			publicHost = cfg.ID + ".example.test"
 		}
 		if err != nil || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" || origin.Host != publicHost || (origin.Scheme != "http" && origin.Scheme != "https") {
 			continue

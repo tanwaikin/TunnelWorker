@@ -134,7 +134,7 @@ async def wait_for_worker(base_url: str, process: subprocess.Popen[bytes]) -> No
             if process.poll() is not None:
                 raise RuntimeError(f"Wrangler exited early with status {process.returncode}")
             try:
-                async with session.get(base_url + "/_health", headers={"Host": "dev.example.net"}) as response:
+                async with session.get(base_url + "/_health", headers={"Host": "example.test"}) as response:
                     last_status = response.status
                     if response.status == 200:
                         return
@@ -230,7 +230,7 @@ async def main() -> None:
                     if proc.poll() is not None:
                         raise RuntimeError(f"Connector exited early ({proc.returncode}): {path.read_text(errors='replace')}")
                     output = path.read_text(errors="replace") if path.exists() else ""
-                    match = re.search(r"Tunnel:\s+https://([a-z0-9_-]+)\.dev\.example\.net", output)
+                    match = re.search(r"Tunnel:\s+https://([a-z0-9_-]+)\.example\.test", output)
                     expiry = re.search(r"Expires:\s+([^\r\n]+)", output)
                     if match and expiry:
                         from datetime import datetime
@@ -254,7 +254,7 @@ async def main() -> None:
             main_session_file = temp_path / "main-session.json"
             proc = start_connector("main", origin_port, session_file=main_session_file)
             tunnel_id, _, _ = await find_created(proc, "main")
-            host = f"{tunnel_id}.dev.example.net"
+            host = f"{tunnel_id}.example.test"
             await wait_tunnel(host)
 
             async with session.get(worker_url + "/inspect?x=1", headers={"Host": host, "X-Smoke": "get"}) as response:
@@ -316,7 +316,7 @@ async def main() -> None:
             protected_session_file = temp_path / "protected-session.json"
             protected_proc = start_connector("protected", origin_port, password=password, session_file=protected_session_file)
             protected_id, _, _ = await find_created(protected_proc, "protected")
-            protected_host = f"{protected_id}.dev.example.net"
+            protected_host = f"{protected_id}.example.test"
             # The default readiness probe is intentionally unauthenticated; a
             # protected tunnel is ready once it consistently answers 401.
             await wait_tunnel(protected_host, expected=401)
@@ -364,7 +364,7 @@ async def main() -> None:
                 expiry_session = temp_path / "expiry-session.json"
                 expiry_proc = start_connector("expiry", origin_port, ttl="1m", session_file=expiry_session)
                 expiry_id, _, expires_at = await find_created(expiry_proc, "expiry")
-                expiry_host = f"{expiry_id}.dev.example.net"
+                expiry_host = f"{expiry_id}.example.test"
                 await wait_tunnel(expiry_host)
                 initial_state = json.loads(expiry_session.read_text())
                 if isinstance(initial_state.get("expiresAt"), int):

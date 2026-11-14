@@ -8,7 +8,7 @@ import (
 
 func TestSaveLoadKeepsCredentialsPrivate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config", "session.json")
-	want := Session{ID: "abc123", BaseURL: "http://127.0.0.1:8787", LocalURL: "http://127.0.0.1:3000", VisitorURL: "https://abc123.dev.example.net", ConnectorToken: "secret-token", ExpiresAt: 1730000000000}
+	want := Session{ID: "abc123", BaseURL: "http://127.0.0.1:8787", LocalURL: "http://127.0.0.1:3000", VisitorURL: "https://abc123.example.test", ConnectorToken: "secret-token", ExpiresAt: 1730000000000}
 	if err := Save(path, want); err != nil {
 		t.Fatal(err)
 	}
