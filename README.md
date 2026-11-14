@@ -23,6 +23,10 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
+Local dev and Vitest use `wrangler.local.jsonc`, which omits the production route table so Wrangler preserves the virtual tunnel host in local requests. Deployment uses `wrangler.jsonc` with the `dev.example.net/*` and `*.dev.example.net/*` routes.
+
+Deployment requires a custom domain with DNS and Worker routes configured for both the control apex and tunnel subdomains. Cloudflare's default `workers.dev` hostname is disabled and cannot create tunnels or carry tunnel traffic. Set `BASE_DOMAIN` to the routed custom domain if you use a different one.
+
 In another terminal, start a local app and connect the CLI:
 
 ```sh

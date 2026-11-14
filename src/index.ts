@@ -209,7 +209,8 @@ function basicPassword(request: Request): string | null {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const domain = env.BASE_DOMAIN || "dev.example.net";
+    const domain = env.BASE_DOMAIN;
+    if (!domain) return json({ error: "base_domain_not_configured" }, 503);
     const host = url.hostname.toLowerCase();
     if (host === domain && url.pathname === "/_health")
       return json({ status: "ok" });
