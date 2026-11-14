@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.local
+.tools/
+.tunnelworker/
+dist/
+coverage/
+*.log
+bin/

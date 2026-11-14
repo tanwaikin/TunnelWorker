@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tunnelworker-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-14",
+  "workers_dev": true,
+  "vars": {
+    "BASE_DOMAIN": "dev.example.net",
+    "DEFAULT_TTL_SECONDS": "1800",
+    "MAX_TTL_SECONDS": "86400",
+    "MAX_BODY_BYTES": "8388608",
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "TUNNELS", "class_name": "Tunnel" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Tunnel"] }],
+}
