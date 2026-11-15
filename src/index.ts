@@ -40,6 +40,17 @@ interface Pending {
   timer?: ReturnType<typeof setTimeout>;
   release?: () => void;
 }
+type HttpSlotResult = { release: () => void } | { response: Response };
+interface HttpWaiter {
+  signal: AbortSignal;
+  resolve: (result: HttpSlotResult) => void;
+  timer: ReturnType<typeof setTimeout>;
+  onAbort: () => void;
+}
+
+const MAX_ACTIVE_HTTP = 8;
+const MAX_QUEUED_HTTP = 32;
+const HTTP_QUEUE_TIMEOUT_MS = 15_000;
 
 function json(value: unknown, status = 200, headers = new Headers()): Response {
   headers.set("content-type", "application/json; charset=utf-8");
@@ -220,8 +231,10 @@ export default {
     const url = new URL(request.url);
     const controlDomain: string = env.BASE_DOMAIN;
     const visitorDomain: string = env.VISITOR_DOMAIN;
-    if (!controlDomain) return json({ error: "base_domain_not_configured" }, 503);
-    if (!visitorDomain) return json({ error: "visitor_domain_not_configured" }, 503);
+    if (!controlDomain)
+      return json({ error: "base_domain_not_configured" }, 503);
+    if (!visitorDomain)
+      return json({ error: "visitor_domain_not_configured" }, 503);
     const host = url.hostname.toLowerCase();
     if (host === controlDomain && url.pathname === "/_health")
       return json({ status: "ok" });
@@ -312,8 +325,7 @@ export default {
     const suffix = `-tunnel.${visitorDomain}`;
     if (!host.endsWith(suffix)) return json({ error: "not_found" }, 404);
     const id = host.slice(0, -suffix.length);
-    if (!isTunnelId(id))
-      return json({ error: "not_found" }, 404);
+    if (!isTunnelId(id)) return json({ error: "not_found" }, 404);
     return env.TUNNELS.getByName(id).fetch(request);
   },
 } satisfies ExportedHandler<Env>;
@@ -329,6 +341,7 @@ export class Tunnel extends DurableObject<Env> {
     }
   >();
   private activeHttp = 0;
+  private httpQueue: HttpWaiter[] = [];
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
@@ -503,32 +516,22 @@ export class Tunnel extends DurableObject<Env> {
     request: Request,
     config: CreateConfig,
   ): Promise<Response> {
-    if (this.activeHttp >= 4) return json({ error: "tunnel_busy" }, 503);
-    this.activeHttp++;
-    let handedOff = false;
-    let released = false;
-    const release = () => {
-      if (!released) {
-        released = true;
-        this.activeHttp--;
+    let setCookie = "";
+    let basicUsed = false;
+    const authorization = request.headers.get("authorization") ?? "";
+    const isBasic = /^Basic\s/i.test(authorization);
+    let basicPassword = "";
+    if (isBasic) {
+      try {
+        basicPassword = atob(authorization.replace(/^Basic\s+/i, ""))
+          .split(":")
+          .slice(1)
+          .join(":");
+      } catch {
+        basicPassword = "";
       }
-    };
+    }
     try {
-      let setCookie = "";
-      let basicUsed = false;
-      const authorization = request.headers.get("authorization") ?? "";
-      const isBasic = /^Basic\s/i.test(authorization);
-      let basicPassword = "";
-      if (isBasic) {
-        try {
-          basicPassword = atob(authorization.replace(/^Basic\s+/i, ""))
-            .split(":")
-            .slice(1)
-            .join(":");
-        } catch {
-          basicPassword = "";
-        }
-      }
       const cookieValid = await validCookie(request, config);
       if (config.visitorHash && !cookieValid) {
         const supplied =
@@ -548,6 +551,23 @@ export class Tunnel extends DurableObject<Env> {
         // unrelated application Basic credentials.
         basicUsed = await matchesSecret(basicPassword, config.visitorHash);
       }
+    } catch (error) {
+      return json(
+        {
+          error:
+            error instanceof Error ? error.message : "authentication_failed",
+        },
+        502,
+      );
+    }
+    if (!this.connector()) return json({ error: "connector_offline" }, 503);
+
+    const slot = await this.acquireHttpSlot(request.signal);
+    if ("response" in slot) return slot.response;
+    const release = slot.release;
+    let handedOff = false;
+    try {
+      if (request.signal.aborted) return this.cancelledRequestResponse();
       const connector = this.connector();
       if (!connector) return json({ error: "connector_offline" }, 503);
       const requestId = crypto.randomUUID();
@@ -637,6 +657,81 @@ export class Tunnel extends DurableObject<Env> {
     } finally {
       if (!handedOff) release();
     }
+  }
+  private acquireHttpSlot(signal: AbortSignal): Promise<HttpSlotResult> {
+    if (signal.aborted)
+      return Promise.resolve({ response: this.cancelledRequestResponse() });
+    if (this.activeHttp < MAX_ACTIVE_HTTP) {
+      this.activeHttp++;
+      return Promise.resolve({ release: this.createHttpRelease() });
+    }
+    if (this.httpQueue.length >= MAX_QUEUED_HTTP)
+      return Promise.resolve({
+        response: json(
+          { error: "tunnel_overloaded" },
+          503,
+          new Headers({ "retry-after": "1" }),
+        ),
+      });
+
+    return new Promise((resolve) => {
+      let waiter: HttpWaiter;
+      const cleanup = () => {
+        clearTimeout(waiter.timer);
+        signal.removeEventListener("abort", waiter.onAbort);
+        const index = this.httpQueue.indexOf(waiter);
+        if (index >= 0) this.httpQueue.splice(index, 1);
+      };
+      const finish = (result: HttpSlotResult) => {
+        cleanup();
+        resolve(result);
+      };
+      waiter = {
+        signal,
+        resolve: finish,
+        timer: setTimeout(() => {
+          finish({
+            response: json(
+              { error: "tunnel_queue_timeout" },
+              503,
+              new Headers({ "retry-after": "1" }),
+            ),
+          });
+        }, HTTP_QUEUE_TIMEOUT_MS),
+        onAbort: () => finish({ response: this.cancelledRequestResponse() }),
+      };
+      this.httpQueue.push(waiter);
+      signal.addEventListener("abort", waiter.onAbort, { once: true });
+      if (signal.aborted) waiter.onAbort();
+    });
+  }
+  private createHttpRelease(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.releaseHttpSlot();
+    };
+  }
+  private releaseHttpSlot(): void {
+    while (this.httpQueue.length > 0) {
+      const waiter = this.httpQueue.shift()!;
+      clearTimeout(waiter.timer);
+      waiter.signal.removeEventListener("abort", waiter.onAbort);
+      if (waiter.signal.aborted) {
+        waiter.resolve({ response: this.cancelledRequestResponse() });
+        continue;
+      }
+      waiter.resolve({ release: this.createHttpRelease() });
+      return;
+    }
+    this.activeHttp--;
+  }
+  private cancelledRequestResponse(): Response {
+    return new Response(null, {
+      status: 499,
+      headers: new Headers({ "cache-control": "no-store" }),
+    });
   }
   private waitResponse(
     id: string,
@@ -908,6 +1003,11 @@ export class Tunnel extends DurableObject<Env> {
     await this.expire();
   }
   private async expire(): Promise<void> {
+    for (const waiter of this.httpQueue.splice(0)) {
+      clearTimeout(waiter.timer);
+      waiter.signal.removeEventListener("abort", waiter.onAbort);
+      waiter.resolve({ response: json({ error: "tunnel_expired" }, 410) });
+    }
     for (const ws of this.ctx.getWebSockets()) ws.close(1001, "tunnel expired");
     for (const [id, item] of this.pending) {
       clearTimeout(item.timer);

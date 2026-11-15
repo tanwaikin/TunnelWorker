@@ -111,7 +111,9 @@ describe("TunnelWorker integration", () => {
       visitorPassword: "correct horse",
     });
     expect(tunnel.id).toMatch(/^[a-f0-9]{36}$/);
-    expect(new URL(tunnel.url).hostname).toBe(`${tunnel.id}-tunnel.example.test`);
+    expect(new URL(tunnel.url).hostname).toBe(
+      `${tunnel.id}-tunnel.example.test`,
+    );
     expect(tunnel.expiresAt).toBeGreaterThan(Date.now());
 
     const missingPassword = await SELF.fetch(
@@ -218,10 +220,13 @@ describe("TunnelWorker integration", () => {
       },
     );
     expect(operatorCannotRevoke.status).toBe(401);
-    const revoked = await SELF.fetch(`https://example.test/api/tunnels/${first.id}`, {
-      method: "DELETE",
-      headers: { authorization: `Bearer ${first.connectorToken}` },
-    });
+    const revoked = await SELF.fetch(
+      `https://example.test/api/tunnels/${first.id}`,
+      {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${first.connectorToken}` },
+      },
+    );
     expect(revoked.status).toBe(200);
     const expired = await SELF.fetch(visitorRequest(first, "/after-revoke"));
     expect(expired.status).toBe(410);
@@ -245,6 +250,91 @@ describe("TunnelWorker integration", () => {
     await stillActiveResponse.arrayBuffer();
     secondConnector.socket.close();
     firstConnector.socket.close();
+  });
+
+  it("queues excess visitor HTTP requests and forwards them when a slot opens", async () => {
+    const tunnel = await createTunnel();
+    const connector = await connectorFor(tunnel);
+    const requestCount = 9;
+    const requests = Array.from({ length: requestCount }, (_, index) =>
+      SELF.fetch(visitorRequest(tunnel, `/parallel/${index}`)),
+    );
+
+    const activeFrames = await Promise.all(
+      Array.from({ length: 8 }, () => connector.next("http")),
+    );
+    await Promise.all(activeFrames.map(() => connector.next("http_body_end")));
+    const paths = Array.from(
+      { length: requestCount },
+      (_, index) => `/parallel/${index}`,
+    );
+    const activePaths = activeFrames.map((frame) => String(frame.path));
+    expect(new Set(activePaths).size).toBe(8);
+    expect(activePaths.every((path) => paths.includes(path))).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(connector.frames.some((frame) => frame.type === "http")).toBe(false);
+
+    const respond = (frame: Frame) => {
+      connector.socket.send(
+        JSON.stringify({
+          type: "http_start",
+          id: frame.id,
+          status: 200,
+          headers: { "content-type": ["text/plain"] },
+        }),
+      );
+      connector.socket.send(JSON.stringify({ type: "http_end", id: frame.id }));
+    };
+    respond(activeFrames[0]!);
+    const queuedFrame = await connector.next("http");
+    expect(queuedFrame.path).toBe(
+      paths.find((path) => !activePaths.includes(path)),
+    );
+    await connector.next("http_body_end");
+    respond(queuedFrame);
+    for (const frame of activeFrames.slice(1)) respond(frame);
+
+    const responses = await Promise.all(requests);
+    expect(responses.map((response) => response.status)).toEqual(
+      Array.from({ length: requestCount }, () => 200),
+    );
+    await Promise.all(responses.map((response) => response.arrayBuffer()));
+    connector.socket.close();
+  });
+
+  it("rejects queued requests when a tunnel expires", async () => {
+    const tunnel = await createTunnel();
+    const connector = await connectorFor(tunnel);
+    const requestCount = 9;
+    const requests = Array.from({ length: requestCount }, (_, index) =>
+      SELF.fetch(visitorRequest(tunnel, `/expire-queued/${index}`)),
+    );
+    const activeFrames = await Promise.all(
+      Array.from({ length: 8 }, () => connector.next("http")),
+    );
+    await Promise.all(activeFrames.map(() => connector.next("http_body_end")));
+    const activePaths = activeFrames.map((frame) => String(frame.path));
+    const queuedIndex = Array.from(
+      { length: requestCount },
+      (_, index) => index,
+    ).find((index) => !activePaths.includes(`/expire-queued/${index}`));
+    if (queuedIndex === undefined) throw new Error("No request was queued");
+
+    const stub = (env as Env).TUNNELS.getByName(tunnel.id);
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(
+        "UPDATE tunnel SET expires_at = ?",
+        Date.now() - 1,
+      );
+      await state.storage.setAlarm(Date.now() + 60_000);
+    });
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+
+    const responses = await Promise.all(requests);
+    expect(responses[queuedIndex]!.status).toBe(410);
+    await Promise.all(responses.map((response) => response.arrayBuffer()));
+    connector.socket.close();
   });
 
   it("streams large responses with pull acknowledgements and forwards application paths", async () => {
