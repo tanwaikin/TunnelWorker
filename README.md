@@ -4,6 +4,8 @@ TunnelWorker exposes a local HTTP application through Cloudflare Workers and one
 
 The operator creates tunnels with a separate secret. Each tunnel gets a random URL ID and a one-time connector credential. A tunnel expires after 30 minutes by default (minimum 1 minute, maximum 24 hours). Reconnecting uses the same credentials and keeps the original expiry. An optional visitor password protects HTTP and browser WebSocket requests; without one, the tunnel is public.
 
+The current project is self-hosted: each operator deploys their own Worker and configures their own domain and secret. Making this repository public will let others deploy their own instance; it does not create a shared public tunnel service.
+
 ```mermaid
 flowchart LR
   V[Browser or API client] --> W[Worker routes your control host and tunnel hosts]
@@ -11,6 +13,16 @@ flowchart LR
   D <-->|Hibernating control WebSocket| C[Go connector]
   C <-->|HTTP and WebSocket| A[Local app]
 ```
+
+## Install the connector
+
+After a public release is published, download the archive for your OS and architecture from GitHub Releases, extract `tunnelworker`, and run `tunnelworker --version`. With the repository public and Go installed, you can also install from source:
+
+```sh
+go install github.com/tanwaikin/TunnelWorker/cmd/tunnelworker@latest
+```
+
+The Connector is a Go program; publishing the Worker on npm is not required. The Worker itself is deployed separately with Wrangler as described below.
 
 ## Run locally
 
@@ -43,27 +55,43 @@ The CLI reads the matching saved credential automatically. To use a custom file 
 
 For local app servers with TLS or a non-default local address, use `--local https://127.0.0.1:3000`. HTTP(S)_PROXY and the system CA trust store are used for the Worker control connection; local origin traffic connects directly to the configured local URL.
 
-## Deploy with your domain
+## Deploy to Cloudflare
 
-This repository does not include a Deploy button or a default production domain. Choose a control hostname and a public parent domain that you control, configure DNS, TLS, and Worker routes, then deploy. The checked-in `wrangler.jsonc` intentionally has no routes and empty `BASE_DOMAIN` and `VISITOR_DOMAIN` vars; both must be configured before deployment.
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/tanwaikin/TunnelWorker)
 
-For example, if you control `example.net`, use `tunnel.example.net` for the control API and `<id>-tunnel.example.net` for visitor URLs. Edit `wrangler.jsonc` before deploying:
+The button will be usable by everyone once this GitHub repository is public; Cloudflare does not accept private repositories for Deploy Buttons. It copies the project into your GitHub account, provisions the Durable Object binding, and connects Workers Builds so later pushes to your production branch deploy automatically. This creates your own self-hosted instance; it is not a shared TunnelWorker service. See [Cloudflare Deploy Buttons](https://developers.cloudflare.com/workers/platform/deploy-buttons/) for their current flow and limitations.
+
+The template intentionally has no default domain routes, has `workers_dev` disabled, and leaves `BASE_DOMAIN` and `VISITOR_DOMAIN` empty. The Deploy Button can collect the configured environment variables and `OPERATOR_TOKEN` secret, but it cannot choose a domain or create your DNS records. The Worker will not accept public traffic until you configure your own zone, routes, and DNS as below.
+
+### 1. Configure your domain and routes
+
+Use a Cloudflare zone you control. For example, if your zone is `example.net`, use `tunnel.example.net` for the control API and `<id>-tunnel.example.net` for visitor URLs. Add or replace these top-level keys in the copied repository's `wrangler.jsonc` (merge them with the existing settings):
 
 ```jsonc
-"routes": [
-  { "pattern": "tunnel.example.net/*", "zone_name": "example.net" },
-  { "pattern": "*-tunnel.example.net/*", "zone_name": "example.net" },
-],
-"vars": {
-  "BASE_DOMAIN": "tunnel.example.net",
-  "VISITOR_DOMAIN": "example.net",
-  // Keep the other checked-in TTL and body-size settings.
+{
+  "routes": [
+    { "pattern": "tunnel.example.net/*", "zone_name": "example.net" },
+    { "pattern": "*-tunnel.example.net/*", "zone_name": "example.net" },
+  ],
+  "vars": {
+    "BASE_DOMAIN": "tunnel.example.net",
+    "VISITOR_DOMAIN": "example.net",
+    // Keep the other checked-in TTL and body-size settings.
+  },
 }
 ```
 
-Replace the sample names with the matching control hostname and public parent domain for your setup. In Cloudflare DNS, add a proxied A record for the control host pointing to `192.0.2.0` (a documentation-only placeholder; matched requests are handled by the Worker and there is no origin server). For each tunnel, add an exact proxied A record named `<id>-tunnel` in the public parent zone, also pointing to `192.0.2.0`. The CLI does not create or delete DNS records. This per-tunnel setup leaves unrelated subdomains alone. A broad `*` DNS record is an alternative, but it makes otherwise-unconfigured first-level subdomains resolve through Cloudflare; the Worker Route `*-tunnel.example.net/*` only sends matching visitor hosts to this Worker. Verify that the active edge certificate covers `*.example.net`; this first-level wildcard is within normal Universal SSL coverage. The route-free configuration disables `workers.dev`; deployment requires the custom domain routes you add. This project does not modify DNS or Cloudflare settings for you.
+Replace the sample host and zone with yours. In the Deploy Button form, if prompted, enter the same `BASE_DOMAIN` and `VISITOR_DOMAIN` values and generate a long random `OPERATOR_TOKEN`. If you configure the secret later, use `npx wrangler secret put OPERATOR_TOKEN` from the copied repository; never commit it.
 
-Then install dependencies, set the operator secret, and deploy:
+### 2. Add proxied DNS records and verify TLS
+
+Create a proxied A record for the control hostname, such as `tunnel`, pointing to `192.0.2.0` (a documentation-only placeholder; matching requests are handled by the Worker and there is no origin server). After creating each tunnel, add an exact proxied A record named `<id>-tunnel` in the parent zone, also pointing to `192.0.2.0`. The CLI does not create or delete DNS records, so remove the exact record yourself when you no longer need it. This setup leaves other subdomains alone.
+
+A broad `*` DNS record is optional. It makes otherwise-unconfigured first-level subdomains resolve through Cloudflare; only names matching `*-tunnel.example.net/*` invoke this Worker. Verify the active edge certificate covers `*.example.net`. The checked-in config keeps `workers_dev` disabled, so the custom routes are required. This project does not change your DNS, zone, or certificate settings.
+
+### 3. Deploy the configured Worker
+
+If you used the Deploy Button, commit the domain and route changes to the copied repository; Workers Builds will deploy the update. For a manual Wrangler deploy instead:
 
 ```sh
 npm ci
@@ -71,7 +99,22 @@ npx wrangler secret put OPERATOR_TOKEN
 npm run deploy
 ```
 
-Set `TUNNELWORKER_TOKEN` to the value of the deployed `OPERATOR_TOKEN` secret before creating a tunnel. The configured control host is used by the CLI, for example `go run ./cmd/tunnelworker --url https://tunnel.example.net --port 3000`. The Worker returns visitor URLs in the `<id>-tunnel.example.net` form. You can use a different control routing host with `--domain`. After creation, add the exact visitor DNS record for the returned ID before opening its URL. Never commit operator or connector credentials.
+### 4. Connect your local app
+
+Install the Connector from GitHub Releases after a public release is available, or build it from the public source:
+
+```sh
+go install github.com/tanwaikin/TunnelWorker/cmd/tunnelworker@latest
+```
+
+Start your local HTTP app, then set `TUNNELWORKER_TOKEN` to the same operator secret configured on the Worker and run:
+
+```sh
+export TUNNELWORKER_TOKEN='<your OPERATOR_TOKEN>'
+tunnelworker --url https://tunnel.example.net --local http://127.0.0.1:3000 --ttl 30m
+```
+
+The CLI prints the visitor URL and expiry and keeps the tunnel connected. Add the exact visitor DNS record for its printed ID, then open the HTTPS URL. To protect it with a password, add `--password '<visitor-password>'`. Pressing Ctrl+C revokes the tunnel and removes its local session file; delete its DNS record separately. Never commit operator or connector credentials.
 
 ## Protocol and limits
 
@@ -102,6 +145,10 @@ npx wrangler deploy --dry-run --outdir=/tmp/tunnelworker-dry-run
 ```
 
 The Vitest suite runs inside workerd with SQLite Durable Objects. The Python smoke test starts local Wrangler, a local HTTP/WebSocket origin, and the actual Go connector. It does not deploy or contact a Cloudflare account. It can also test TTL and reconnect behavior without `--skip-expiry`, which waits at least one minute.
+
+## Community
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and [SECURITY.md](SECURITY.md) for vulnerability reporting. Private vulnerability reporting must be enabled in GitHub before the repository becomes public.
 
 ## References
 

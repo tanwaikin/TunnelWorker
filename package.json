@@ -9,6 +9,19 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types"
   },
+  "cloudflare": {
+    "bindings": {
+      "BASE_DOMAIN": {
+        "description": "Your control hostname, for example tunnel.example.net. It must be in a Cloudflare zone you control."
+      },
+      "VISITOR_DOMAIN": {
+        "description": "The parent DNS zone for visitor URLs, for example example.net. Visitors use <tunnel-id>-tunnel.example.net."
+      },
+      "OPERATOR_TOKEN": {
+        "description": "Generate a long random secret. The CLI uses this to create tunnels. Never use the placeholder value from .dev.vars.example."
+      }
+    }
+  },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.8.2",
     "prettier": "^3.10.1",

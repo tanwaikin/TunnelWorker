@@ -1,4 +1,4 @@
-module tunnelworker
+module github.com/tanwaikin/TunnelWorker
 
 go 1.22
 

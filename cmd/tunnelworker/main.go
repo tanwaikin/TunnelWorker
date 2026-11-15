@@ -14,10 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"tunnelworker/internal/control"
-	"tunnelworker/internal/session"
-	"tunnelworker/internal/tunnel"
+	"github.com/tanwaikin/TunnelWorker/internal/control"
+	"github.com/tanwaikin/TunnelWorker/internal/session"
+	"github.com/tanwaikin/TunnelWorker/internal/tunnel"
 )
+
+var version = "dev"
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -38,8 +40,13 @@ func run(args []string, out, errOut io.Writer) error {
 	connectID := fs.String("connect", "", "reconnect to an existing tunnel ID")
 	credential := fs.String("token", "", "connector credential for --connect (or read from session file)")
 	sessionPath := fs.String("session-file", defaultSessionPath(), "private file for saving and loading reconnect credentials")
+	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *showVersion {
+		fmt.Fprintf(out, "tunnelworker %s\n", version)
+		return nil
 	}
 	if fs.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))

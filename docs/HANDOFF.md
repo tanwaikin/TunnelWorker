@@ -67,6 +67,14 @@ The valid control WSS request obtained 101 through the Codex Cloud proxy, so the
 1. **DNS for future tunnels:** only the current test tunnel has a proxied DNS record. New IDs need exact records unless DNS creation is automated; a broad wildcard DNS record would also resolve otherwise-unconfigured sibling subdomains.
 2. **Extended live acceptance:** the new flat-host static HTTP/HTTPS path passed. Public application WebSocket forwarding, streaming, password/cookie access, and natural expiry have not been re-run against this deployment.
 
+## Public distribution preparation
+
+- The Go module path is set to `github.com/tanwaikin/TunnelWorker`; the CLI reports its version for release builds.
+- `.goreleaser.yaml` and a tag-triggered GitHub Actions workflow are prepared to build Linux, macOS, and Windows binaries and create a **draft** release. CI runs `goreleaser check`; no release tag has been pushed.
+- The README now includes a Cloudflare Deploy Button and self-hosted deployment and Connector instructions. The button requires a public repository; the copied project still needs the operator's custom domain routes and DNS before it accepts traffic.
+- `CONTRIBUTING.md` and `SECURITY.md` document contribution and vulnerability reporting. Enable GitHub private vulnerability reporting and choose a `LICENSE` before making the repository public; it remains private for now.
+- The agreed public mode is self-hosted: each operator deploys their own Worker and supplies their own Cloudflare domain and secret. This repository will not provide a shared public endpoint.
+
 ## Suggested next steps
 
 1. Continue adding exact proxied DNS records for new IDs, or automate those per-tunnel records. Keep broad wildcard DNS disabled unless its effect on otherwise-unconfigured subdomains is intended.
