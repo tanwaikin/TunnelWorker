@@ -31,11 +31,19 @@ async function createTunnel(
   return await response.json<TunnelInfo>();
 }
 
-async function connectorFor(tunnel: TunnelInfo) {
-  const response = await SELF.fetch(`${tunnel.url}/_control`, {
+function controlURL(tunnel: TunnelInfo): URL {
+  const url = new URL(tunnel.url);
+  url.hostname = url.hostname.slice(tunnel.id.length + 1);
+  url.pathname = `/api/tunnels/${tunnel.id}/connect`;
+  url.search = "";
+  return url;
+}
+
+async function connectorFor(tunnel: TunnelInfo, token = tunnel.connectorToken) {
+  const response = await SELF.fetch(controlURL(tunnel), {
     headers: {
       upgrade: "websocket",
-      authorization: `Bearer ${tunnel.connectorToken}`,
+      authorization: `Bearer ${token}`,
     },
   });
   expect(response.status).toBe(101);
@@ -123,6 +131,32 @@ describe("TunnelWorker integration", () => {
     );
     expect(noPasswordWS.status).toBe(401);
 
+    const missingConnectorCredential = await SELF.fetch(controlURL(tunnel), {
+      headers: { upgrade: "websocket" },
+    });
+    expect(missingConnectorCredential.status).toBe(401);
+    const badConnectorCredential = await SELF.fetch(controlURL(tunnel), {
+      headers: {
+        upgrade: "websocket",
+        authorization: "Bearer incorrect-connector-token",
+      },
+    });
+    expect(badConnectorCredential.status).toBe(401);
+    const malformedControlID = await SELF.fetch(
+      "https://example.test/api/tunnels/not-a-tunnel-id/connect",
+      { headers: { upgrade: "websocket" } },
+    );
+    expect(malformedControlID.status).toBe(404);
+    const visitorCannotUseControlPath = await SELF.fetch(
+      visitorRequest(tunnel, `/api/tunnels/${tunnel.id}/connect`, {
+        headers: {
+          upgrade: "websocket",
+          authorization: `Bearer ${tunnel.connectorToken}`,
+        },
+      }),
+    );
+    expect(visitorCannotUseControlPath.status).toBe(401);
+
     const publicHealth = await SELF.fetch("https://example.test/_health");
     expect(publicHealth.status).toBe(200);
     const wrongHostManagement = await SELF.fetch(
@@ -130,6 +164,87 @@ describe("TunnelWorker integration", () => {
       { method: "POST" },
     );
     expect(wrongHostManagement.status).toBe(401); // forwarded through the tunnel's visitor auth boundary
+  });
+
+  it("routes each control ID to its own tunnel and revokes through the control API path", async () => {
+    const first = await createTunnel();
+    const second = await createTunnel();
+    const firstConnector = await connectorFor(first);
+    const secondConnector = await connectorFor(second);
+
+    const wrongTunnelCredential = await SELF.fetch(controlURL(second), {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${first.connectorToken}`,
+      },
+    });
+    expect(wrongTunnelCredential.status).toBe(401);
+
+    const firstRequest = SELF.fetch(visitorRequest(first, "/first"));
+    const secondRequest = SELF.fetch(visitorRequest(second, "/second"));
+    const [firstFrame, secondFrame] = await Promise.all([
+      firstConnector.next("http"),
+      secondConnector.next("http"),
+    ]);
+    expect(firstFrame.path).toBe("/first");
+    expect(secondFrame.path).toBe("/second");
+    for (const [connector, frame, status] of [
+      [firstConnector, firstFrame, 201],
+      [secondConnector, secondFrame, 202],
+    ] as const) {
+      await connector.next("http_body_end");
+      connector.socket.send(
+        JSON.stringify({
+          type: "http_start",
+          id: frame.id,
+          status,
+          headers: { "content-type": ["text/plain"] },
+        }),
+      );
+      connector.socket.send(JSON.stringify({ type: "http_end", id: frame.id }));
+    }
+    const firstResponse = await firstRequest;
+    const secondResponse = await secondRequest;
+    expect(firstResponse.status).toBe(201);
+    expect(secondResponse.status).toBe(202);
+    await firstResponse.arrayBuffer();
+    await secondResponse.arrayBuffer();
+
+    const operatorCannotRevoke = await SELF.fetch(
+      `https://example.test/api/tunnels/${first.id}`,
+      {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${operatorToken}` },
+      },
+    );
+    expect(operatorCannotRevoke.status).toBe(401);
+    const revoked = await SELF.fetch(`https://example.test/api/tunnels/${first.id}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${first.connectorToken}` },
+    });
+    expect(revoked.status).toBe(200);
+    const expired = await SELF.fetch(visitorRequest(first, "/after-revoke"));
+    expect(expired.status).toBe(410);
+    const stillActive = SELF.fetch(visitorRequest(second, "/still-active"));
+    const stillActiveFrame = await secondConnector.next("http");
+    expect(stillActiveFrame.path).toBe("/still-active");
+    await secondConnector.next("http_body_end");
+    secondConnector.socket.send(
+      JSON.stringify({
+        type: "http_start",
+        id: stillActiveFrame.id,
+        status: 203,
+        headers: {},
+      }),
+    );
+    secondConnector.socket.send(
+      JSON.stringify({ type: "http_end", id: stillActiveFrame.id }),
+    );
+    const stillActiveResponse = await stillActive;
+    expect(stillActiveResponse.status).toBe(203);
+    await stillActiveResponse.arrayBuffer();
+    secondConnector.socket.close();
+    firstConnector.socket.close();
   });
 
   it("streams large responses with pull acknowledgements and forwards application paths", async () => {

@@ -23,7 +23,7 @@ func TestCreateUsesApexHostAndTTLSeconds(t *testing.T) {
 			t.Error(err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"abc","url":"https://abc.example.test","connectorToken":"connector-secret","expiresAt":1730000000000}`))
+		_, _ = w.Write([]byte(`{"id":"0123456789abcdef0123456789abcdef0123","url":"https://0123456789abcdef0123456789abcdef0123.example.test","connectorToken":"connector-secret","expiresAt":1730000000000}`))
 	}))
 	defer srv.Close()
 	u, _ := url.Parse(srv.URL)
@@ -40,8 +40,52 @@ func TestCreateUsesApexHostAndTTLSeconds(t *testing.T) {
 	if body["ttlSeconds"] != float64(1800) || body["visitorPassword"] != "visitor-secret" {
 		t.Fatalf("create body = %#v", body)
 	}
-	if got.ID != "abc" || got.ConnectorToken != "connector-secret" {
+	if got.ID != "0123456789abcdef0123456789abcdef0123" || got.ConnectorToken != "connector-secret" {
 		t.Fatalf("create result = %#v", got)
+	}
+}
+
+func TestRevokeUsesPathRoutingAndControlHost(t *testing.T) {
+	const id = "0123456789abcdef0123456789abcdef0123"
+	var seenHost, seenAuth, seenPath, seenMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenHost, seenAuth, seenPath, seenMethod = r.Host, r.Header.Get("Authorization"), r.URL.Path, r.Method
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	if err := New(u).Revoke(context.Background(), id, "connector-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if seenHost != "example.test" || seenAuth != "Bearer connector-secret" || seenPath != "/api/tunnels/"+id || seenMethod != http.MethodDelete {
+		t.Fatalf("revoke request = %s %s Host=%q Authorization=%q", seenMethod, seenPath, seenHost, seenAuth)
+	}
+}
+
+func TestRevokeRejectsInvalidTunnelID(t *testing.T) {
+	u, _ := url.Parse("http://127.0.0.1:1")
+	if err := New(u).Revoke(context.Background(), "bad/id", "connector-secret"); err == nil || !strings.Contains(err.Error(), "invalid tunnel ID") {
+		t.Fatalf("Revoke error = %v, want invalid tunnel ID", err)
+	}
+}
+
+func TestRevokeUsesControlHostForRemoteEndpoint(t *testing.T) {
+	const id = "0123456789abcdef0123456789abcdef0123"
+	var seenHost string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenHost = r.Host
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	remote, _ := url.Parse("http://control.example.test")
+	remote.Host = strings.TrimPrefix(srv.URL, "http://")
+	client := NewWithDomain(remote, "control.example.test")
+	if err := client.Revoke(context.Background(), id, "connector-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if seenHost != "control.example.test" {
+		t.Fatalf("Host = %q, want control.example.test", seenHost)
 	}
 }
 

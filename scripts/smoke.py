@@ -256,6 +256,10 @@ async def main() -> None:
             tunnel_id, _, _ = await find_created(proc, "main")
             host = f"{tunnel_id}.example.test"
             await wait_tunnel(host)
+            connector_log = log_path("main").read_text(errors="replace")
+            check("control connection established" in connector_log,
+                  "Go connector did not report an established control WebSocket")
+            print("PASS: Go connector established the path-routed control WebSocket")
 
             async with session.get(worker_url + "/inspect?x=1", headers={"Host": host, "X-Smoke": "get"}) as response:
                 check(response.status == 200, f"GET returned {response.status}")

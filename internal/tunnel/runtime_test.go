@@ -45,7 +45,7 @@ func TestControlHandshakeRejectionIsTerminal(t *testing.T) {
 	go server.Serve(listener)
 	defer server.Close()
 	base, _ := url.Parse("http://" + listener.Addr().String())
-	a := New(Config{BaseURL: base, ID: "abc", Token: "token"})
+	a := New(Config{BaseURL: base, ID: "0123456789abcdef0123456789abcdef0123", Token: "token"})
 	err = a.runOnce(context.Background())
 	var terminal *terminalError
 	if !errors.As(err, &terminal) || terminal.status != http.StatusGone {
@@ -66,7 +66,7 @@ func TestRunReportsSanitizedReconnectStatus(t *testing.T) {
 	base, _ := url.Parse("http://" + listener.Addr().String())
 	ctx, cancel := context.WithCancel(context.Background())
 	var status string
-	a := New(Config{BaseURL: base, ID: "abc", Token: "must-not-be-logged", OnStatus: func(message string) { status = message; cancel() }})
+	a := New(Config{BaseURL: base, ID: "0123456789abcdef0123456789abcdef0123", Token: "must-not-be-logged", OnStatus: func(message string) { status = message; cancel() }})
 	err = a.Run(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context cancellation", err)
@@ -81,7 +81,7 @@ func TestRunReportsSanitizedReconnectStatus(t *testing.T) {
 
 func TestRunStopsWhenOriginalExpiryHasPassed(t *testing.T) {
 	base, _ := url.Parse("http://127.0.0.1:1")
-	a := New(Config{BaseURL: base, ID: "abc", Token: "token", ExpiresAt: time.Now().Add(-time.Second).UnixMilli()})
+	a := New(Config{BaseURL: base, ID: "0123456789abcdef0123456789abcdef0123", Token: "token", ExpiresAt: time.Now().Add(-time.Second).UnixMilli()})
 	if err := a.Run(context.Background()); err == nil || !strings.Contains(err.Error(), "expiry") {
 		t.Fatalf("Run error = %v", err)
 	}
@@ -133,13 +133,21 @@ func TestTranslateOnlyExactPublicOrigin(t *testing.T) {
 
 func TestControlURLAndHostRouteByTunnelID(t *testing.T) {
 	base, _ := url.Parse("http://127.0.0.1:8787")
-	a := New(Config{BaseURL: base, ID: "abc123", Token: "private"})
+	a := New(Config{BaseURL: base, ID: "0123456789abcdef0123456789abcdef0123", Token: "private"})
 	u, host := a.controlURL()
-	if u.String() != "ws://127.0.0.1:8787/_control" {
+	if u.String() != "ws://127.0.0.1:8787/api/tunnels/0123456789abcdef0123456789abcdef0123/connect" {
 		t.Fatalf("control URL = %s", u)
 	}
-	if host != "abc123.example.test" {
-		t.Fatalf("Host = %s", host)
+	if host != "example.test" {
+		t.Fatalf("local Wrangler Host = %s", host)
+	}
+	remote, _ := url.Parse("https://tunnel.example.test")
+	u, host = New(Config{BaseURL: remote, ID: "0123456789abcdef0123456789abcdef0123", Token: "private"}).controlURL()
+	if u.String() != "wss://tunnel.example.test/api/tunnels/0123456789abcdef0123456789abcdef0123/connect" {
+		t.Fatalf("production control URL = %s", u)
+	}
+	if host != "" {
+		t.Fatalf("production Host override = %q, want none", host)
 	}
 }
 

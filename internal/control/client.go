@@ -127,12 +127,17 @@ func (c *Client) Create(ctx context.Context, operatorToken string, ttl time.Dura
 }
 
 func (c *Client) Revoke(ctx context.Context, id, token string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.endpoint("/_control"), nil)
+	if !validTunnelID(id) {
+		return fmt.Errorf("revoke tunnel: invalid tunnel ID")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.endpoint("/api/tunnels/"+id), nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Host = id + "." + c.domain
+	// Keep local Wrangler routing on the virtual apex host. For production,
+	// c.domain is the same hostname used in the configured control URL.
+	req.Host = c.domain
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("revoke tunnel: %w", err)
@@ -142,6 +147,18 @@ func (c *Client) Revoke(ctx context.Context, id, token string) error {
 		return apiError("revoke tunnel", resp)
 	}
 	return nil
+}
+
+func validTunnelID(id string) bool {
+	if len(id) != 36 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func apiError(op string, resp *http.Response) error {

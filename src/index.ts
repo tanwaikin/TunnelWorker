@@ -93,6 +93,14 @@ function bearer(request: Request): string {
 function isUpgrade(request: Request): boolean {
   return request.headers.get("upgrade")?.toLowerCase() === "websocket";
 }
+function isTunnelId(value: string): boolean {
+  return /^[a-f0-9]{36}$/.test(value);
+}
+function internalControlRequest(request: Request): Request {
+  const url = new URL(request.url);
+  url.pathname = "/_control";
+  return new Request(url, request);
+}
 function randomId(): string {
   const bytes = new Uint8Array(18);
   crypto.getRandomValues(bytes);
@@ -214,6 +222,24 @@ export default {
     const host = url.hostname.toLowerCase();
     if (host === domain && url.pathname === "/_health")
       return json({ status: "ok" });
+    if (host === domain) {
+      const connect = url.pathname.match(/^\/api\/tunnels\/([^/]+)\/connect$/);
+      if (connect) {
+        if (!isTunnelId(connect[1]!)) return json({ error: "not_found" }, 404);
+        if (request.method !== "GET")
+          return json({ error: "method_not_allowed" }, 405);
+        return env.TUNNELS.getByName(connect[1]!).fetch(
+          internalControlRequest(request),
+        );
+      }
+      const revoke = url.pathname.match(/^\/api\/tunnels\/([^/]+)$/);
+      if (revoke && request.method === "DELETE") {
+        if (!isTunnelId(revoke[1]!)) return json({ error: "not_found" }, 404);
+        return env.TUNNELS.getByName(revoke[1]!).fetch(
+          internalControlRequest(request),
+        );
+      }
+    }
     if (
       host === domain &&
       url.pathname === "/api/tunnels" &&

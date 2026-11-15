@@ -30,7 +30,7 @@ type Agent struct{ cfg Config }
 func New(cfg Config) *Agent { return &Agent{cfg: cfg} }
 
 func (a *Agent) Run(ctx context.Context) error {
-	if a.cfg.ID == "" || a.cfg.Token == "" {
+	if !validTunnelID(a.cfg.ID) || a.cfg.Token == "" {
 		return errors.New("tunnel ID and connector credential are required")
 	}
 	delay := time.Second
@@ -79,6 +79,18 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 }
 
+func validTunnelID(id string) bool {
+	if len(id) != 36 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *Agent) status(message string) {
 	if a.cfg.OnStatus != nil {
 		a.cfg.OnStatus(message)
@@ -113,14 +125,21 @@ func (a *Agent) controlURL() (*url.URL, string) {
 	} else {
 		u.Scheme = "ws"
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/_control"
+	u.Path = strings.TrimRight(u.Path, "/") + "/api/tunnels/" + a.cfg.ID + "/connect"
 	u.RawQuery = ""
 	u.Fragment = ""
-	domain := a.cfg.Domain
-	if domain == "" {
-		domain = "example.test"
+	// Wrangler's local dev server listens on loopback but routes requests by
+	// the virtual Host. Production control connections use the URL hostname.
+	host := ""
+	hostname := strings.ToLower(u.Hostname())
+	ip := net.ParseIP(hostname)
+	if ip != nil && ip.IsLoopback() || hostname == "localhost" || strings.HasSuffix(hostname, ".localhost") {
+		host = a.cfg.Domain
+		if host == "" {
+			host = "example.test"
+		}
 	}
-	return &u, a.cfg.ID + "." + domain
+	return &u, host
 }
 
 type terminalError struct{ status int }
@@ -136,14 +155,15 @@ func (e *handshakeError) Error() string {
 }
 
 func (a *Agent) runOnce(ctx context.Context) error {
-	u, host := a.controlURL()
+	u, localHost := a.controlURL()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return err
 	}
-	req.Host = host
 	req.Header.Set("Authorization", "Bearer "+a.cfg.Token)
-	req.Header.Set("Host", host)
+	if localHost != "" {
+		req.Header.Set("Host", localHost)
+	}
 	dialer := websocket.Dialer{Proxy: http.ProxyFromEnvironment, HandshakeTimeout: 15 * time.Second, EnableCompression: false}
 	conn, resp, err := dialer.DialContext(ctx, u.String(), req.Header)
 	if err != nil {
