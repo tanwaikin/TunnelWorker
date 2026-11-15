@@ -14,7 +14,7 @@ Self-hosted HTTP/WebSocket reverse tunnel for local development using Cloudflare
 - HTTP forwarding and streaming responses, WebSocket forwarding for HMR, bounded bodies/queues, cancellation, deadlines, reconnect with backoff, useful failure boundaries.
 - Control websocket uses hibernation; persist expiry/credential hashes and serialize attachments so hibernation does not lose connection ownership.
 - Wrangler production config must not target a real zone by default. It starts with an empty base domain and no routes; the operator configures these for their domain before deployment. Local routing uses reserved `example.test`.
-- The Worker is deployed to the operator's Cloudflare account with an exact control-host route and a `*-tunnel.<VISITOR_DOMAIN>/*` visitor route. No broad visitor DNS wildcard is configured; the temporary test tunnel uses an exact proxied record. Keep account details and credentials out of Git. Public-release preparation is underway for a self-hosted model; the repository remains private until licensing and release readiness are settled.
+- The Worker is deployed to the operator's Cloudflare account with an exact control-host route and a `*-tunnel.<VISITOR_DOMAIN>/*` visitor route. No broad visitor DNS wildcard is configured; the temporary test tunnel uses an exact proxied record. Keep account details and credentials out of Git. The self-hosted public release uses the MIT license; the repository remains private until the owner is ready to change visibility and enable private vulnerability reporting.
 
 ## Delivery
 

@@ -70,9 +70,9 @@ The valid control WSS request obtained 101 through the Codex Cloud proxy, so the
 ## Public distribution preparation
 
 - The Go module path is set to `github.com/tanwaikin/TunnelWorker`; the CLI reports its version for release builds.
-- `.goreleaser.yaml` and a tag-triggered GitHub Actions workflow are prepared to build Linux, macOS, and Windows binaries and create a **draft** release. CI runs `goreleaser check`; no release tag has been pushed.
+- The project uses the MIT license. `.goreleaser.yaml` includes the license in each archive; a tag-triggered GitHub Actions workflow builds Linux, macOS, and Windows binaries and creates a **draft** release. CI runs `goreleaser check`; no release tag has been pushed.
 - The README now includes a Cloudflare Deploy Button and self-hosted deployment and Connector instructions. The button requires a public repository; the copied project still needs the operator's custom domain routes and DNS before it accepts traffic.
-- `CONTRIBUTING.md` and `SECURITY.md` document contribution and vulnerability reporting. Enable GitHub private vulnerability reporting and choose a `LICENSE` before making the repository public; it remains private for now.
+- `CONTRIBUTING.md` and `SECURITY.md` document contribution and vulnerability reporting. Enable GitHub private vulnerability reporting before making the repository public; it remains private for now.
 - The agreed public mode is self-hosted: each operator deploys their own Worker and supplies their own Cloudflare domain and secret. This repository will not provide a shared public endpoint.
 
 ## Suggested next steps

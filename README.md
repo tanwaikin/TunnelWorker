@@ -150,6 +150,8 @@ The Vitest suite runs inside workerd with SQLite Durable Objects. The Python smo
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and [SECURITY.md](SECURITY.md) for vulnerability reporting. Private vulnerability reporting must be enabled in GitHub before the repository becomes public.
 
+TunnelWorker is licensed under the [MIT License](LICENSE).
+
 ## References
 
 - [Durable Object WebSocket hibernation](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)
