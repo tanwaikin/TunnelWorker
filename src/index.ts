@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { hashSecret, matchesSecret, randomSecret } from "./protocol";
 
-export interface Env extends Cloudflare.Env {
+export interface Env extends Omit<Cloudflare.Env, "VISITOR_DOMAIN"> {
   OPERATOR_TOKEN: string;
   VISITOR_DOMAIN: string;
 }
