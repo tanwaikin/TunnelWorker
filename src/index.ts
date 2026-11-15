@@ -3,6 +3,7 @@ import { hashSecret, matchesSecret, randomSecret } from "./protocol";
 
 export interface Env extends Cloudflare.Env {
   OPERATOR_TOKEN: string;
+  VISITOR_DOMAIN: string;
 }
 
 interface CreateRequest {
@@ -217,12 +218,14 @@ function basicPassword(request: Request): string | null {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const domain: string = env.BASE_DOMAIN;
-    if (!domain) return json({ error: "base_domain_not_configured" }, 503);
+    const controlDomain: string = env.BASE_DOMAIN;
+    const visitorDomain: string = env.VISITOR_DOMAIN;
+    if (!controlDomain) return json({ error: "base_domain_not_configured" }, 503);
+    if (!visitorDomain) return json({ error: "visitor_domain_not_configured" }, 503);
     const host = url.hostname.toLowerCase();
-    if (host === domain && url.pathname === "/_health")
+    if (host === controlDomain && url.pathname === "/_health")
       return json({ status: "ok" });
-    if (host === domain) {
+    if (host === controlDomain) {
       const connect = url.pathname.match(/^\/api\/tunnels\/([^/]+)\/connect$/);
       if (connect) {
         if (!isTunnelId(connect[1]!)) return json({ error: "not_found" }, 404);
@@ -241,7 +244,7 @@ export default {
       }
     }
     if (
-      host === domain &&
+      host === controlDomain &&
       url.pathname === "/api/tunnels" &&
       request.method === "POST"
     ) {
@@ -301,15 +304,15 @@ export default {
       if (!id) return json({ error: "allocation_failed" }, 503);
       return json({
         id,
-        url: `https://${id}.${env.BASE_DOMAIN}`,
+        url: `https://${id}-tunnel.${visitorDomain}`,
         connectorToken,
         expiresAt,
       });
     }
-    const suffix = `.${domain}`;
+    const suffix = `-tunnel.${visitorDomain}`;
     if (!host.endsWith(suffix)) return json({ error: "not_found" }, 404);
     const id = host.slice(0, -suffix.length);
-    if (!/^[a-z0-9_-]{20,40}$/.test(id))
+    if (!isTunnelId(id))
       return json({ error: "not_found" }, 404);
     return env.TUNNELS.getByName(id).fetch(request);
   },

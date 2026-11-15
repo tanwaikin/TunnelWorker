@@ -117,12 +117,16 @@ func TestHeaderForwardingStripsHopByHopAndPreservesCookies(t *testing.T) {
 
 func TestTranslateOnlyExactPublicOrigin(t *testing.T) {
 	local, _ := url.Parse("http://127.0.0.1:3000")
-	cfg := Config{ID: "abc", Domain: "example.test", LocalURL: local}
+	id := "0123456789abcdef0123456789abcdef0123"
+	cfg := Config{ID: id, VisitorURL: "https://" + id + "-tunnel.example.test", LocalURL: local}
 	for input, want := range map[string]string{
-		"https://abc.example.test":              "http://127.0.0.1:3000",
-		"https://foreign.example":               "https://foreign.example",
-		"null":                                  "null",
-		"https://abc.example.test.evil.example": "https://abc.example.test.evil.example",
+		"https://" + id + "-tunnel.example.test":      "http://127.0.0.1:3000",
+		"http://" + id + "-tunnel.example.test":       "http://127.0.0.1:3000",
+		"https://foreign.example":                     "https://foreign.example",
+		"null":                                        "null",
+		"https://" + id + ".tunnel.example.test":      "https://" + id + ".tunnel.example.test",
+		"https://other-tunnel.example.test":           "https://other-tunnel.example.test",
+		"https://" + id + "-tunnel.example.test.evil": "https://" + id + "-tunnel.example.test.evil",
 	} {
 		got := translatePublicOrigin(map[string][]string{"Origin": {input}}, cfg)["Origin"][0]
 		if got != want {

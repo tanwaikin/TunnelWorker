@@ -33,7 +33,7 @@ async function createTunnel(
 
 function controlURL(tunnel: TunnelInfo): URL {
   const url = new URL(tunnel.url);
-  url.hostname = url.hostname.slice(tunnel.id.length + 1);
+  url.hostname = "example.test";
   url.pathname = `/api/tunnels/${tunnel.id}/connect`;
   url.search = "";
   return url;
@@ -111,7 +111,7 @@ describe("TunnelWorker integration", () => {
       visitorPassword: "correct horse",
     });
     expect(tunnel.id).toMatch(/^[a-f0-9]{36}$/);
-    expect(new URL(tunnel.url).hostname).toBe(`${tunnel.id}.example.test`);
+    expect(new URL(tunnel.url).hostname).toBe(`${tunnel.id}-tunnel.example.test`);
     expect(tunnel.expiresAt).toBeGreaterThan(Date.now());
 
     const missingPassword = await SELF.fetch(
@@ -160,10 +160,10 @@ describe("TunnelWorker integration", () => {
     const publicHealth = await SELF.fetch("https://example.test/_health");
     expect(publicHealth.status).toBe(200);
     const wrongHostManagement = await SELF.fetch(
-      `https://${tunnel.id}.example.test/api/tunnels`,
+      `https://${tunnel.id}.tunnel.example.test/api/tunnels`,
       { method: "POST" },
     );
-    expect(wrongHostManagement.status).toBe(401); // forwarded through the tunnel's visitor auth boundary
+    expect(wrongHostManagement.status).toBe(404); // the legacy hostname format is no longer accepted
   });
 
   it("routes each control ID to its own tunnel and revokes through the control API path", async () => {
@@ -261,7 +261,7 @@ describe("TunnelWorker integration", () => {
       `Basic ${btoa("app:credential")}`,
     ]);
     expect(start.headers).toMatchObject({
-      "x-forwarded-host": [`${tunnel.id}.example.test`],
+      "x-forwarded-host": [`${tunnel.id}-tunnel.example.test`],
     });
     await connector.next("http_body_end");
     const id = String(start.id);

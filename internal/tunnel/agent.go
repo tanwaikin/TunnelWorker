@@ -19,11 +19,11 @@ import (
 const maxControlFrame = 96 << 10
 
 type Config struct {
-	BaseURL, LocalURL *url.URL
-	ID, Token         string
-	Domain            string
-	ExpiresAt         int64
-	OnStatus          func(string)
+	BaseURL, LocalURL  *url.URL
+	ID, Token          string
+	Domain, VisitorURL string
+	ExpiresAt          int64
+	OnStatus           func(string)
 }
 type Agent struct{ cfg Config }
 

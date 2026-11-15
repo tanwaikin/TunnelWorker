@@ -23,7 +23,7 @@ func TestCreateUsesApexHostAndTTLSeconds(t *testing.T) {
 			t.Error(err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"0123456789abcdef0123456789abcdef0123","url":"https://0123456789abcdef0123456789abcdef0123.example.test","connectorToken":"connector-secret","expiresAt":1730000000000}`))
+		_, _ = w.Write([]byte(`{"id":"0123456789abcdef0123456789abcdef0123","url":"https://0123456789abcdef0123456789abcdef0123-tunnel.example.test","connectorToken":"connector-secret","expiresAt":1730000000000}`))
 	}))
 	defer srv.Close()
 	u, _ := url.Parse(srv.URL)

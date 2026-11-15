@@ -113,7 +113,7 @@ func run(args []string, out, errOut io.Writer) error {
 	}
 	fmt.Fprintf(out, "Session: %s\n", *sessionPath)
 
-	agent := tunnel.New(tunnel.Config{BaseURL: base, LocalURL: local, ID: saved.ID, Token: saved.ConnectorToken, Domain: domain, ExpiresAt: saved.ExpiresAt, OnStatus: func(message string) { fmt.Fprintf(errOut, "tunnelworker: %s\n", message) }})
+	agent := tunnel.New(tunnel.Config{BaseURL: base, LocalURL: local, ID: saved.ID, Token: saved.ConnectorToken, Domain: domain, VisitorURL: saved.VisitorURL, ExpiresAt: saved.ExpiresAt, OnStatus: func(message string) { fmt.Fprintf(errOut, "tunnelworker: %s\n", message) }})
 	if err := agent.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}
