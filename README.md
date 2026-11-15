@@ -26,7 +26,7 @@ npm run dev
 Local development and Vitest use `wrangler.local.jsonc` with the reserved `example.test` hostname and no production routes. For a local end-to-end tunnel, set the virtual host in the request:
 
 ```sh
-export TUNNELWORKER_TOKEN='the-same-local-operator-token'
+export TUNNELWORKER_TOKEN='the same value as OPERATOR_TOKEN in .dev.vars'
 go run ./cmd/tunnelworker --url http://127.0.0.1:8787 --port 3000 --ttl 30m
 curl -H 'Host: <id>-tunnel.example.test' http://127.0.0.1:8787/health
 ```
@@ -39,7 +39,7 @@ The CLI prints the public URL and expiry, then runs until interrupted. It saves 
 go run ./cmd/tunnelworker --url http://127.0.0.1:8787 --port 3000 --connect TUNNEL_ID
 ```
 
-The CLI reads the matching saved credential automatically. To use a custom file or pass the credential explicitly, use `--session-file PATH` and `--token CREDENTIAL`. A newly created tunnel can be visitor-password protected with `--password VALUE` or `TUNNELWORKER_PASSWORD`; the CLI does not put credentials in tunnel URLs or print them. A deliberate Ctrl+C revokes the tunnel and removes its session file. An unexpected connector exit leaves it available until its original expiry.
+The CLI reads the matching saved credential automatically. To use a custom file or pass the credential explicitly, use `--session-file PATH` and `--token CREDENTIAL`. A newly created tunnel can be visitor-password protected with `--password VALUE` or `TUNNELWORKER_PASSWORD`; the CLI does not put credentials in tunnel URLs or print them. A deliberate Ctrl+C revokes the tunnel and removes its session file. An unexpected connector exit leaves it available until its original expiry. DNS records are managed separately: Ctrl+C does not remove the visitor DNS record.
 
 For local app servers with TLS or a non-default local address, use `--local https://127.0.0.1:3000`. HTTP(S)_PROXY and the system CA trust store are used for the Worker control connection; local origin traffic connects directly to the configured local URL.
 
@@ -61,7 +61,7 @@ For example, if you control `example.net`, use `tunnel.example.net` for the cont
 }
 ```
 
-Replace the sample names with the matching control hostname and public parent domain for your setup. In Cloudflare DNS, add a proxied A record for the control host and a proxied `*` A record in the public parent zone, both pointing to `192.0.2.0` (the documentation-only placeholder; the Worker handles matched requests and there is no origin server). The `*` DNS record makes otherwise-unconfigured first-level subdomains resolve through Cloudflare; use per-tunnel DNS records instead if that broad DNS behavior is unsuitable. The Worker Route `*-tunnel.example.net/*` filters which of those hosts invoke this Worker. Verify that the active edge certificate covers `*.example.net`; this first-level wildcard is within normal Universal SSL coverage. The route-free configuration disables `workers.dev`; deployment requires the custom domain routes you add. This project does not modify DNS or Cloudflare settings for you.
+Replace the sample names with the matching control hostname and public parent domain for your setup. In Cloudflare DNS, add a proxied A record for the control host pointing to `192.0.2.0` (a documentation-only placeholder; matched requests are handled by the Worker and there is no origin server). For each tunnel, add an exact proxied A record named `<id>-tunnel` in the public parent zone, also pointing to `192.0.2.0`. The CLI does not create or delete DNS records. This per-tunnel setup leaves unrelated subdomains alone. A broad `*` DNS record is an alternative, but it makes otherwise-unconfigured first-level subdomains resolve through Cloudflare; the Worker Route `*-tunnel.example.net/*` only sends matching visitor hosts to this Worker. Verify that the active edge certificate covers `*.example.net`; this first-level wildcard is within normal Universal SSL coverage. The route-free configuration disables `workers.dev`; deployment requires the custom domain routes you add. This project does not modify DNS or Cloudflare settings for you.
 
 Then install dependencies, set the operator secret, and deploy:
 
@@ -71,7 +71,7 @@ npx wrangler secret put OPERATOR_TOKEN
 npm run deploy
 ```
 
-The configured control host is used by the CLI, for example `go run ./cmd/tunnelworker --url https://tunnel.example.net --port 3000`. The Worker returns visitor URLs in the `<id>-tunnel.example.net` form. You can use a different control routing host with `--domain`. Never commit operator or connector credentials.
+Set `TUNNELWORKER_TOKEN` to the value of the deployed `OPERATOR_TOKEN` secret before creating a tunnel. The configured control host is used by the CLI, for example `go run ./cmd/tunnelworker --url https://tunnel.example.net --port 3000`. The Worker returns visitor URLs in the `<id>-tunnel.example.net` form. You can use a different control routing host with `--domain`. After creation, add the exact visitor DNS record for the returned ID before opening its URL. Never commit operator or connector credentials.
 
 ## Protocol and limits
 

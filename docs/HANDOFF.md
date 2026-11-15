@@ -9,7 +9,7 @@
 - The original Host-routed baseline had passed Go race tests and vet, TypeScript typecheck, four workerd integration tests, Wrangler dry-run, and local end-to-end smoke tests. The smoke coverage included streaming, bodyless statuses, repeated cookies, gzip, password gating, reconnect/expiry, origin failure, and graceful revoke.
 - Control routing now uses `GET /api/tunnels/{id}/connect` for the connector WebSocket and `DELETE /api/tunnels/{id}` for connector revocation. The Worker forwards these routes to the existing DO `/_control` handler after validating the 36-character lowercase hex tunnel ID. The Go connector no longer overrides Host for production control WebSockets; the loopback Wrangler virtual host remains supported.
 - Current source returns flat visitor URLs in the `<id>-tunnel.<public-domain>` format, requires a separate `VISITOR_DOMAIN` setting, and rejects the legacy nested visitor hostname. The configured Cloudflare route uses `*-tunnel.<public-domain>/*`; each visitor host needs a proxied DNS record.
-- The path-routed change passed `npm ci`, `npm run typecheck`, `npm test` (5 integration tests), `go test ./...`, `go vet ./...`, and `python scripts/smoke.py --skip-expiry` locally. The local smoke confirmed the real Go connector established its WSS and forwarded HTTP and application WebSocket traffic through Wrangler/Workerd. Its `--skip-expiry` option skipped the wall-clock expiry scenario; the integration test still checked that reconnect reports the original expiry.
+- The path-routed change passed local integration and smoke tests. The latest flat-host source and type fix (`dde2001`) passed GitHub Actions: Wrangler type generation, TypeScript typecheck, all 5 Vitest tests, Go race tests and vet, smoke dependencies and smoke test, and Wrangler deploy dry-run.
 
 ## Live deployment status
 
@@ -30,7 +30,7 @@ The earlier CLI dialed the control endpoint and overrode HTTP Host to select the
 
 ### Path-routed deployment (2026-11-14)
 
-The existing `tunnelworker` was updated in place for the operator's requested domain. Its apex and wildcard Worker routes and proxied DNS records were switched to that domain. The path-routed Worker version is deployed at 100% (current version 5, deployment `769e39dd-5e17-48e4-9c67-1f4fe22ae0e5`). It reuses the existing Durable Object namespace; `BASE_DOMAIN` and the existing numeric settings were verified after deployment. At the operator's request, the `OPERATOR_TOKEN` secret was re-PUT from this checkout's ignored `.dev.vars`; its value is intentionally not recorded. The generic Wrangler config remains unchanged.
+The existing `tunnelworker` was updated in place for the operator's control hostname. At that time, Worker version 5 with path-routed control API was deployed at 100% (deployment `769e39dd-5e17-48e4-9c67-1f4fe22ae0e5`). It reused the existing Durable Object namespace; `BASE_DOMAIN` and numeric settings were verified after deployment. The visitor hostname still used the nested format then; version 6 below replaced its Worker route and DNS record with the flat format. At the operator's request, the `OPERATOR_TOKEN` secret was re-PUT from this checkout's ignored `.dev.vars`; its value is intentionally not recorded. The generic Wrangler config remains unchanged.
 
 ### Flat visitor-host deployment (2026-11-15)
 
@@ -45,6 +45,10 @@ To avoid changing resolution for unrelated subdomains, no `*.<public-domain>` DN
 | Visitor HTTPS at `<id>-tunnel.<public-domain>` | HTTP 200 with TLS verification enabled, Cloudflare Ray ID, and the local static page |
 | Other nested visitor format | No longer routed; nested wildcard Worker route and DNS record were removed |
 
+### Historical path-routed live tests (2026-11-14)
+
+The following results are from Worker version 5, before the visitor hostname changed to the flat `<id>-tunnel.<public-domain>` format. They describe the earlier nested visitor host and should not be read as results for the current version 6 visitor route.
+
 | Check | Result |
 | --- | --- |
 | Control-host HTTPS `/_health` with TLS verification | HTTP 200, `{"status":"ok"}`, Cloudflare Ray ID present |
@@ -54,9 +58,9 @@ To avoid changing resolution for unrelated subdomains, no `*.<public-domain>` DN
 | Reconnect on the same tunnel ID | The real connector re-established after a replacement handshake; saved expiry stayed `2026-11-14T19:50:02.863Z` |
 | Graceful connector shutdown and revoke through the new DELETE route | CLI exited cleanly; the subsequent visitor request returned HTTP 410 `tunnel_expired`, and the session file was removed |
 | New control connect path with a valid-format but nonexistent ID | HTTP 410 with Cloudflare Ray ID; Worker/DO routing was reached |
-| Public HTTPS request to that wildcard host, TLS verification enabled | HTTP 503 from the Codex Cloud Envoy proxy (`upstream connect error ... remote connection failure`), without a Cloudflare Ray ID; it failed before evidence of Worker execution |
+| HTTPS request to the old nested visitor hostname, TLS verification enabled | HTTP 503 from the Codex Cloud Envoy proxy (`upstream connect error ... remote connection failure`), without a Cloudflare Ray ID; it failed before evidence of Worker execution |
 
-The valid control WSS request obtained 101 through the Codex Cloud proxy, so the original control-path Envoy 503 was not reproduced after moving control routing to the URL path. The remaining HTTPS visitor 503 is separate: it came from Envoy without a Cloudflare Ray ID. Its exact cause is unconfirmed; the zone certificate inventory lacks coverage for the nested visitor wildcard, so browser HTTPS and visitor WSS remain unverified. No certificate order or subscription change was made.
+The valid control WSS request obtained 101 through the Codex Cloud proxy, so the original control-path Envoy 503 was not reproduced after moving control routing to the URL path. The historical nested-host visitor request returned 503 from Envoy without a Cloudflare Ray ID; its exact cause was unconfirmed. Version 6 changed visitor routing to the flat first-level hostname, and a static page on that host subsequently returned HTTP 200 over HTTPS with certificate verification enabled. No certificate order or subscription change was made.
 
 ## Unresolved issues
 
@@ -65,8 +69,8 @@ The valid control WSS request obtained 101 through the Codex Cloud proxy, so the
 
 ## Suggested next steps
 
-1. Choose a per-tunnel DNS provisioning method for future dynamic IDs, or explicitly opt into a broad wildcard record after reviewing its DNS behavior.
-2. If required, run longer live expiry and application WebSocket checks; the control WSS, HTTP forwarding, reconnect timestamp, and DELETE revoke were validated on the previous path-routed version.
+1. Continue adding exact proxied DNS records for new IDs, or automate those per-tunnel records. Keep broad wildcard DNS disabled unless its effect on otherwise-unconfigured subdomains is intended.
+2. If required, run longer live expiry and application WebSocket checks on the flat visitor hostname; the live flat-host check so far used a static HTTP page.
 3. Preserve the generic repository configuration and keep personal hostnames, account details, and secrets out of Git.
 
 Local reproduction commands are in the README. Use `wrangler.local.jsonc` for local development; production routes cause Wrangler to infer a fixed local hostname and can invalidate virtual-host tests.
