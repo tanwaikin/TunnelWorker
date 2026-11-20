@@ -26,7 +26,6 @@ interface Pending {
   status?: number;
   headers?: Headers;
   started: boolean;
-  bytes: number;
   queued: number;
   resolve?: (v: {
     status: number;
@@ -746,7 +745,6 @@ export class Tunnel extends DurableObject<Env> {
     return new Promise((resolve, reject) => {
       const state: Pending = {
         started: false,
-        bytes: 0,
         queued: 0,
         connector,
         release,
@@ -787,6 +785,9 @@ export class Tunnel extends DurableObject<Env> {
       state.timer = setTimeout(() => {
         this.pending.delete(id);
         state.cleanup?.();
+        try {
+          connector.send(JSON.stringify({ type: "http_cancel", id }));
+        } catch {}
         state.release?.();
         state.reject?.(new Error("connector_timeout"));
       }, 30_000);
@@ -831,6 +832,9 @@ export class Tunnel extends DurableObject<Env> {
         } catch {
           clearTimeout(item.timer);
           item.cleanup?.();
+          try {
+            item.connector?.send(JSON.stringify({ type: "http_cancel", id }));
+          } catch {}
           item.reject?.(new Error("invalid local response"));
           this.pending.delete(id);
           item.release?.();
@@ -860,15 +864,20 @@ export class Tunnel extends DurableObject<Env> {
           bytes = decodeB64(String(frame.data ?? ""));
         } catch {
           clearTimeout(item.timer);
+          try {
+            item.connector?.send(JSON.stringify({ type: "http_cancel", id }));
+          } catch {}
           item.controller.error(new Error("invalid response body encoding"));
           this.pending.delete(id);
           item.release?.();
           return;
         }
-        item.bytes += bytes.length;
-        if (bytes.length > 32 * 1024 || item.bytes > current.maxBody) {
+        if (bytes.length > 32 * 1024 || item.queued > 0) {
           clearTimeout(item.timer);
-          item.controller.error(new Error("relay_body_limit"));
+          try {
+            item.connector?.send(JSON.stringify({ type: "http_cancel", id }));
+          } catch {}
+          item.controller.error(new Error("invalid_response_stream"));
           this.pending.delete(id);
           item.release?.();
           return;

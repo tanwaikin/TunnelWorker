@@ -81,6 +81,9 @@ func (r *runtime) readLoop(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		// Keep active multiplexed traffic alive even when the peer runtime
+		// does not exchange WebSocket pong frames reliably.
+		_ = r.conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 		m, err := decodeFrame(raw)
 		if err != nil {
 			return fmt.Errorf("invalid control frame: %w", err)
@@ -153,9 +156,9 @@ func (r *runtime) onHTTPBody(m envelope) {
 }
 
 func (r *runtime) onHTTPBodyEnd(parent context.Context, id string) {
-	// Give the local operation a hard deadline; cancellation from the Worker
-	// closes it immediately without affecting other multiplexed requests.
-	ctx, cancel := context.WithTimeout(parent, 2*time.Minute)
+	// The Worker owns response-idle timeouts and the connector enforces the
+	// per-chunk ACK timeout. Keep active requests uncapped, with cancellation.
+	ctx, cancel := context.WithCancel(parent)
 	r.mu.Lock()
 	req := r.httpRequests[id]
 	if req == nil || req.started {

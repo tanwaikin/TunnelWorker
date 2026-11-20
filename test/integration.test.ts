@@ -365,7 +365,9 @@ describe("TunnelWorker integration", () => {
     );
     const part = new Uint8Array(32 * 1024).fill(0x5a);
     const chunk = btoa(String.fromCharCode(...part));
-    const count = 40;
+    // Exceed the 8 MiB request body limit to verify downloads are not
+    // subject to a cumulative response size cap.
+    const count = 300;
     const stream = (async () => {
       for (let i = 0; i < count; i++) {
         connector.socket.send(
@@ -380,6 +382,22 @@ describe("TunnelWorker integration", () => {
     await stream;
     expect(body.byteLength).toBe(count * part.byteLength);
     expect(new Uint8Array(body)[0]).toBe(0x5a);
+    connector.socket.close();
+  });
+
+  it("cancels the connector when the visitor cancels a streamed response", async () => {
+    const tunnel = await createTunnel();
+    const connector = await connectorFor(tunnel);
+    const request = SELF.fetch(visitorRequest(tunnel, "/download"));
+    const start = await connector.next("http");
+    await connector.next("http_body_end");
+    const id = String(start.id);
+    connector.socket.send(
+      JSON.stringify({ type: "http_start", id, status: 200, headers: {} }),
+    );
+    const response = await request;
+    await response.body!.cancel();
+    expect(await connector.next("http_cancel")).toMatchObject({ id });
     connector.socket.close();
   });
 
